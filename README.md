@@ -4,7 +4,7 @@ Este projeto é uma aplicação web interativa que permite aos usuários pesquis
 
 ![Screenshot_5](https://github.com/user-attachments/assets/8c12f115-f168-419b-95cf-52b3709a6abf)
 
-## ✨ Funcionalidades
+## ✨ Funcionalidades.
 
 - 🔍 Busca por título, autor, editora e categoria
 - 📊 Filtros e ordenação por relevância, mais recentes, título (A-Z) ou autor (A-Z)
