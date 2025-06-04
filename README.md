@@ -15,7 +15,7 @@ Este projeto é uma aplicação web interativa que permite aos usuários pesquis
 
 ## 📁 Estrutura do Projeto
 
-📄 [`index.html`](buscador-de-livros\index.html): Estrutura da interface.
+📄 [`index.html`](buscador-de-livros/index.html): Estrutura da interface.
 ├── styles.css # Estilização responsiva em dark mode
 ├── api.js # Comunicação com APIs externas
 ├── search.js # Lógica de busca e manipulação DOM
