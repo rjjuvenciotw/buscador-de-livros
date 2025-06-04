@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buscar Livro</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Font Awesome para ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Buscar Livro</h1>
+        
+        <div class="search-container">
+            <input type="text" class="search-box" placeholder="Digite o título, autor ou ISBN do livro..." id="searchInput">
+            <div class="search-icon" id="searchButton"><i class="fas fa-search"></i></div>
+        </div>
+        
+        <!-- Botões de filtro e busca lado a lado -->
+        <div class="filter-and-search">
+            <div class="filter-dropdown">
+                <button class="filter-btn" id="filterBtn"><i class="fas fa-sliders"></i> Filtros</button>
+                <div class="filter-content" id="filterContent">
+                    <div class="filter-section">
+                        <h3><i class="fas fa-search"></i> Buscar por</h3>
+                        <div class="filter-options-grid">
+                            <div class="filter-option">
+                                <input type="checkbox" id="titleField" checked>
+                                <label for="titleField">Título</label>
+                            </div>
+                            <div class="filter-option">
+                                <input type="checkbox" id="authorField" checked>
+                                <label for="authorField">Autor</label>
+                            </div>
+                            <div class="filter-option">
+                                <input type="checkbox" id="publisherField">
+                                <label for="publisherField">Editora</label>
+                            </div>
+                            <div class="filter-option">
+                                <input type="checkbox" id="subjectField">
+                                <label for="subjectField">Categoria</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="filter-section">
+                        <h3><i class="fas fa-sort"></i> Ordenação</h3>
+                        <div class="filter-options-grid">
+                            <div class="filter-option">
+                                <input type="radio" name="sortOrder" id="relevanceSort" checked>
+                                <label for="relevanceSort">Relevância</label>
+                            </div>
+                            <div class="filter-option">
+                                <input type="radio" name="sortOrder" id="newestSort">
+                                <label for="newestSort">Recentes</label>
+                            </div>
+                            <div class="filter-option">
+                                <input type="radio" name="sortOrder" id="titleSort">
+                                <label for="titleSort">Título (A-Z)</label>
+                            </div>
+                            <div class="filter-option">
+                                <input type="radio" name="sortOrder" id="authorSort">
+                                <label for="authorSort">Autor (A-Z)</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="filter-option ai-option">
+                        <input type="checkbox" id="useGemini" checked>
+                        <label for="useGemini"><i class="fas fa-robot"></i> Usar IA para descrições</label>
+                    </div>
+                    
+                    <button class="apply-filter-btn" id="applyFilters">Aplicar</button>
+                </div>
+            </div>
+            
+            <div class="search-buttons">
+                <button class="btn" id="normalSearchBtn"><i class="fas fa-search"></i> Buscar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="loading-indicator" id="loading">
+        <div class="spinner"></div>
+        <p>Buscando livros...</p>
+    </div>
+
+    <div id="results" class="results-container" style="display: none;">
+        <div class="results-header">
+            <h2 id="searchDescription" class="search-description"></h2>
+        </div>
+        <div id="resultsList" class="results-list"></div>
+    </div>
+
+    <!-- Book Detail Modal -->
+    <div id="bookDetailModal" class="book-detail-modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <div class="modal-body" id="modalContent">
+                <!-- Conteúdo do modal será preenchido dinamicamente -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notifications -->
+    <div id="toast" class="toast"></div>
+
+    <!-- External JS files -->
+    <script src="api.js"></script>
+    <script src="gemini.js"></script>
+    <script src="storage.js"></script>
+    <script src="search.js"></script>
+
+    <script>
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', function() {
+            // Focar no campo de busca ao carregar a página
+            document.getElementById('searchInput').focus();
+            
+            // Inicializar API Gemini se disponível
+            if (window.GeminiAPI && typeof window.GeminiAPI.init === 'function') {
+                const apiKey = window.StorageManager?.getApiKey() || "AIzaSyCDqalwwc3yJkwvb7kHZnjCL2J_fM3AXKg";
+                window.GeminiAPI.init(apiKey);
+            }
+            
+            // Mostrar/ocultar filtros ao clicar no botão
+            const filterBtn = document.getElementById('filterBtn');
+            const filterContent = document.getElementById('filterContent');
+            
+            if (filterBtn && filterContent) {
+                filterBtn.addEventListener('click', function() {
+                    filterContent.classList.toggle('show');
+                    filterBtn.classList.toggle('active');
+                });
+                
+                // Fechar ao clicar fora
+                document.addEventListener('click', function(e) {
+                    if (!filterBtn.contains(e.target) && !filterContent.contains(e.target)) {
+                        filterContent.classList.remove('show');
+                        filterBtn.classList.remove('active');
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
