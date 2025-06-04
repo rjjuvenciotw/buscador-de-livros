@@ -4,59 +4,52 @@
  */
 
 // Configuração da API do Gemini
-const GEMINI_CONFIG = {
-    apiKey: "AIzaSyCDqalwwc3yJkwvb7kHZnjCL2J_fM3AXKg", // Substitua com sua chave API real
-    apiUrl: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
-    maxRetries: 2,
-    timeout: 10000  // 10 segundos
+const CONFIGURACAO_GEMINI = {
+    chaveApi: "AIzaSyCDqalwwc3yJkwvb7kHZnjCL2J_fM3AXKg", // Substitua com sua chave API real
+    urlApi: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+    maxTentativas: 2,
+    tempoLimite: 10000  // 10 segundos
 };
 
 // Expor a API globalmente
-window.GeminiAPI = {
-    init: initGemini,
-    getBookDescription: generateBookDescription,
-    getSearchDescription: generateSearchDescription,
-    getRecommendations: generateRecommendations,
-    analyzeBook: analyzeBook,
-    getDescription: generateBookDescription // Alias para compatibilidade com código existente
+window.ApiGemini = {
+    inicializar: inicializarApiGemini,
+    obterDescricaoLivro: gerarDescricaoLivroParaInterface,
+    obterDescricaoBusca: generateSearchDescription,
+    obterRecomendacoes: generateRecommendations,
+    analisarLivro: analyzeBook,
+    obterDescricao: gerarDescricaoLivroParaInterface
 };
 
 /**
  * Inicializa a API do Gemini com a chave fornecida
- * @param {string} apiKey - Chave de API do Gemini
+ * @param {string} chaveApiRecebida - Chave de API do Gemini
  */
-function initGemini(apiKey) {
-    if (apiKey && apiKey.length > 10) {
-        GEMINI_CONFIG.apiKey = apiKey;
+function inicializarApiGemini(chaveApiRecebida) {
+    if (chaveApiRecebida && chaveApiRecebida.length > 10) {
+        CONFIGURACAO_GEMINI.chaveApi = chaveApiRecebida;
         console.log("API Gemini inicializada com sucesso");
         return true;
     }
-    console.warn("Chave API inválida. Utilizando modo demonstração.");
-    return false;
+    console.warn("Chave API inválida. Utilizando chave padrão ou modo demonstração.");
+    return CONFIGURACAO_GEMINI.chaveApi !== "AIzaSyCDqalwwc3yJkwvb7kHZnjCL2J_fM3AXKg";
 }
 
 /**
  * Gera uma descrição aprimorada para um livro usando IA
- * @param {Object} book - Objeto com informações do livro
+ * @param {Object} dadosLivro - Objeto com informações do livro
  * @returns {Promise<string>} - Descrição gerada pela IA
  */
-async function generateBookDescription(book) {
-    // Verificar se temos uma chave API configurada
-    if (GEMINI_CONFIG.apiKey === "AIzaSyCDqalwwc3yJkwvb7kHZnjCL2J_fM3AXKg") {
-        return generateFallbackDescription(book);
+async function gerarDescricaoLivroComGemini(dadosLivro) {
+    if (CONFIGURACAO_GEMINI.chaveApi === "AIzaSyCDqalwwc3yJkwvb7kHZnjCL2J_fM3AXKg") {
+        console.warn("Usando descrição alternativa pois a chave da API Gemini não foi configurada.");
+        return gerarDescricaoAlternativa(dadosLivro);
     }
     
     try {
-        // Construir o prompt para o Gemini
-        const prompt = buildBookPrompt(book);
-        
-        // Preparar a requisição
-        const requestData = {
-            contents: [{
-                parts: [{
-                    text: prompt
-                }]
-            }],
+        const instrucao = construirInstrucaoLivro(dadosLivro);
+        const dadosRequisicao = {
+            contents: [{ parts: [{ text: instrucao }] }],
             generationConfig: {
                 temperature: 0.7,
                 maxOutputTokens: 300,
@@ -65,410 +58,399 @@ async function generateBookDescription(book) {
             }
         };
         
-        // Fazer a requisição à API
-        const response = await fetch(`${GEMINI_CONFIG.apiUrl}?key=${GEMINI_CONFIG.apiKey}`, {
+        const resposta = await fetch(`${CONFIGURACAO_GEMINI.urlApi}?key=${CONFIGURACAO_GEMINI.chaveApi}`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(requestData)
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(dadosRequisicao),
+            signal: AbortSignal.timeout(CONFIGURACAO_GEMINI.tempoLimite)
         });
         
-        if (!response.ok) {
-            throw new Error(`Erro na API do Gemini: ${response.status}`);
+        if (!resposta.ok) {
+            const erroTexto = await resposta.text();
+            throw new Error(`Erro na API do Gemini: ${resposta.status} - ${erroTexto}`);
         }
         
-        const data = await response.json();
+        const dadosResposta = await resposta.json();
         
-        // Extrair o texto da resposta
-        if (data.candidates && data.candidates.length > 0 && 
-            data.candidates[0].content && 
-            data.candidates[0].content.parts && 
-            data.candidates[0].content.parts.length > 0) {
+        if (dadosResposta.candidates && dadosResposta.candidates.length > 0 && 
+            dadosResposta.candidates[0].content && 
+            dadosResposta.candidates[0].content.parts && 
+            dadosResposta.candidates[0].content.parts.length > 0) {
             
-            return data.candidates[0].content.parts[0].text.trim();
+            return dadosResposta.candidates[0].content.parts[0].text.trim();
         } else {
+            console.warn("Formato de resposta inesperado da API Gemini:", dadosResposta);
             throw new Error("Formato de resposta inesperado da API Gemini");
         }
-    } catch (error) {
-        console.error("Erro ao gerar descrição com Gemini:", error);
-        return generateFallbackDescription(book);
+    } catch (erro) {
+        console.error("Erro ao gerar descrição com Gemini:", erro);
+        return gerarDescricaoAlternativa(dadosLivro);
     }
 }
 
 /**
  * Constrói um prompt adequado para enviar ao Gemini com base nas informações do livro
- * @param {Object} book - Objeto com informações do livro
+ * @param {Object} dadosLivro - Objeto com informações do livro
  * @returns {string} - Prompt formatado
  */
-function buildBookPrompt(book) {
-    let prompt = `RESPONDA SEMPRE EM PORTUGUÊS DO BRASIL,Gere uma descrição concisa e atraente (máximo 250 caracteres) para o seguinte livro. :\n\n`;
-    prompt += `Título: ${book.title}\n`;
-    prompt += `Autor(es): ${book.authors.join(', ')}\n`;
-    
-    if (book.publishedDate) {
-        prompt += `Ano de publicação: ${book.publishedDate}\n`;
+function construirInstrucaoLivro(dadosLivro) {
+    let instrucao = `RESPONDA SEMPRE EM PORTUGUÊS DO BRASIL. Gere uma descrição curta e envolvente (idealmente 1-2 frases, máximo de 250 caracteres) para o livro abaixo. Evite frases como "Este livro é sobre..." ou "A descrição do livro é...". Vá direto ao ponto.\n\n`;
+    instrucao += `Título: ${dadosLivro.title}\n`;
+    if (dadosLivro.authors && dadosLivro.authors.length > 0) {
+        instrucao += `Autor(es): ${dadosLivro.authors.join(', ')}\n`;
     }
-    
-    if (book.categories && book.categories.length > 0) {
-        prompt += `Categorias: ${book.categories.join(', ')}\n`;
+    if (dadosLivro.publishedDate) {
+        instrucao += `Ano de publicação: ${dadosLivro.publishedDate}\n`;
     }
-    
-    if (book.description && book.description !== 'Sem descrição disponível' && 
-        book.description !== 'Descrição não disponível na API do Open Library') {
-        prompt += `Descrição original: ${book.description}\n`;
+    if (dadosLivro.categories && dadosLivro.categories.length > 0) {
+        instrucao += `Categorias: ${dadosLivro.categories.join(', ')}\n`;
     }
-    
-    prompt += `\nFormate a resposta como um único parágrafo breve que capture a essência do livro, sem introdução ou conclusão. Não mencione que você está descrevendo o livro, apenas forneça a descrição diretamente. RESPONDA SEMPRE EM PORTUGUÊS DO BRASIL.`;
-    
-    return prompt;
+    // Apenas incluir descrição original se for útil e não redundante
+    if (dadosLivro.description && dadosLivro.description.length > 10 && 
+        dadosLivro.description !== 'Sem descrição disponível' && 
+        dadosLivro.description.toLowerCase().indexOf('não disponível') === -1) {
+        instrucao += `Trecho da descrição original: ${dadosLivro.description.substring(0,100)}...\n`;
+    }
+    instrucao += `\nSeja direto e use uma linguagem que desperte curiosidade.`;
+    return instrucao;
 }
 
 /**
  * Gera descrição a partir do termo de busca
- * @param {string} searchTerm - Termo de busca do usuário
+ * @param {string} termoBusca - Termo de busca do usuário
  * @returns {Promise<string>} - Descrição gerada pela IA
  */
-async function generateSearchDescription(searchTerm) {
-    // Verificar se temos uma chave API configurada
-    if (GEMINI_CONFIG.apiKey === "AIzaSyCDqalwwc3yJkwvb7kHZnjCL2J_fM3AXKg") {
-        return `Resultados para "${searchTerm}"`;
+async function gerarDescricaoBuscaComGemini(termoBusca) {
+    if (CONFIGURACAO_GEMINI.chaveApi === "AIzaSyCDqalwwc3yJkwvb7kHZnjCL2J_fM3AXKg") {
+        return `Resultados da busca por "${termoBusca}"`;
     }
     
     try {
-        // Construir o prompt para o Gemini
-        const prompt = `Imagine que "${searchTerm}" é o título de um livro interessante. 
-        Crie uma breve descrição ficcional (máximo 2 frases) para este livro imaginário. 
-        RESPONDA SEMPRE EM PORTUGUÊS DO BRASIL. 
-        Não mencione que é um livro imaginário ou que você está criando uma descrição.
-        Seja criativo e capture a essência do que poderia ser este livro.`;
-        
-        // Preparar a requisição
-        const requestData = {
-            contents: [{
-                parts: [{
-                    text: prompt
-                }]
-            }],
+        const instrucao = `RESPONDA SEMPRE EM PORTUGUÊS DO BRASIL. Crie um título ou uma frase curta e chamativa (máximo 2 frases) para uma seção de resultados de busca sobre "${termoBusca}". Seja criativo e direto. Não use introduções como "Aqui estão os resultados para...". Exemplo: "Explorando o universo de ${termoBusca}" ou "O que encontramos sobre ${termoBusca}:".`;
+        const dadosRequisicao = {
+            contents: [{ parts: [{ text: instrucao }] }],
             generationConfig: {
                 temperature: 0.8,
-                maxOutputTokens: 200,
+                maxOutputTokens: 150,
                 topP: 0.9,
                 topK: 40
             }
         };
         
-        // Fazer a requisição à API
-        const response = await fetch(`${GEMINI_CONFIG.apiUrl}?key=${GEMINI_CONFIG.apiKey}`, {
+        const resposta = await fetch(`${CONFIGURACAO_GEMINI.urlApi}?key=${CONFIGURACAO_GEMINI.chaveApi}`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(requestData)
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(dadosRequisicao),
+            signal: AbortSignal.timeout(CONFIGURACAO_GEMINI.tempoLimite)
         });
         
-        if (!response.ok) {
-            throw new Error(`Erro na API do Gemini: ${response.status}`);
+        if (!resposta.ok) {
+            const erroTexto = await resposta.text();
+            throw new Error(`Erro na API do Gemini ao gerar descrição da busca: ${resposta.status} - ${erroTexto}`);
         }
         
-        const data = await response.json();
-        
-        // Extrair o texto da resposta
-        if (data.candidates && data.candidates.length > 0 && 
-            data.candidates[0].content && 
-            data.candidates[0].content.parts && 
-            data.candidates[0].content.parts.length > 0) {
-            
-            return data.candidates[0].content.parts[0].text.trim();
+        const dadosResposta = await resposta.json();
+        if (dadosResposta.candidates && dadosResposta.candidates[0]?.content?.parts?.[0]?.text) {
+            return dadosResposta.candidates[0].content.parts[0].text.trim();
         } else {
-            throw new Error("Formato de resposta inesperado da API Gemini");
+            console.warn("Formato de resposta inesperado da API Gemini para descrição de busca:", dadosResposta);
+            throw new Error("Formato de resposta inesperado da API Gemini para descrição de busca");
         }
-    } catch (error) {
-        console.error("Erro ao gerar descrição da busca com Gemini:", error);
-        return `Resultados para "${searchTerm}"`;
+    } catch (erro) {
+        console.error("Erro ao gerar descrição da busca com Gemini:", erro);
+        return `Resultados para "${termoBusca}"`;
     }
 }
 
 /**
  * Gera recomendações de livros com base em histórico e favoritos
- * @param {Array} favoriteBooks - Lista de livros favoritos
- * @param {Array} searchHistory - Histórico de pesquisas
+ * @param {Array} livrosFavoritos - Lista de livros favoritos
+ * @param {Array} historicoBusca - Histórico de pesquisas
  * @returns {Promise<Array>} - Array com recomendações geradas
  */
-async function generateRecommendations(favoriteBooks = [], searchHistory = []) {
-    // Verificar se temos uma chave API configurada
-    if (GEMINI_CONFIG.apiKey === "AIzaSyCDqalwwc3yJkwvb7kHZnjCL2J_fM3AXKg") {
-        return generateDefaultRecommendations();
+async function gerarRecomendacoesComGemini(livrosFavoritos = [], historicoBusca = []) {
+    if (CONFIGURACAO_GEMINI.chaveApi === "AIzaSyCDqalwwc3yJkwvb7kHZnjCL2J_fM3AXKg") {
+        return gerarRecomendacoesPadrao();
     }
     
     try {
-        // Construir o prompt para o Gemini
-        let prompt = `RESPONDA SEMPRE EM PORTUGUÊS DO BRASIL. Gere 5 recomendações de livros baseadas nos seguintes dados:\n\n`;
-        
-        // Adicionar informações sobre livros favoritos, se disponíveis
-        if (favoriteBooks && favoriteBooks.length > 0) {
-            prompt += "Livros favoritos do usuário:\n";
-            favoriteBooks.slice(0, 5).forEach((book, index) => {
-                prompt += `${index + 1}. "${book.title}" por ${book.authors.join(', ')}\n`;
-                if (book.categories && book.categories.length > 0) {
-                    prompt += `   Categorias: ${book.categories.join(', ')}\n`;
+        let instrucao = `RESPONDA SEMPRE EM PORTUGUÊS DO BRASIL. Gere 3 recomendações de livros baseadas nos seguintes dados:\n\n`;
+        if (livrosFavoritos && livrosFavoritos.length > 0) {
+            instrucao += "Livros favoritos do usuário:\n";
+            livrosFavoritos.slice(0, 3).forEach((livro, indice) => {
+                instrucao += `${indice + 1}. "${livro.title}"${livro.authors ? ` por ${livro.authors.join(', ')}` : ''}`;
+                if (livro.categories && livro.categories.length > 0) {
+                    instrucao += `   Categorias: ${livro.categories.join(', ')}`;
                 }
+                instrucao += "\n";
             });
-            prompt += "\n";
+            instrucao += "\n";
         }
-        
-        // Adicionar informações sobre histórico de pesquisa, se disponível
-        if (searchHistory && searchHistory.length > 0) {
-            prompt += "Termos de busca recentes do usuário:\n";
-            searchHistory.slice(0, 10).forEach((term, index) => {
-                prompt += `${index + 1}. "${term}"\n`;
+        if (historicoBusca && historicoBusca.length > 0) {
+            instrucao += "Termos de busca recentes do usuário:\n";
+            historicoBusca.slice(0, 5).forEach((termo, indice) => {
+                instrucao += `${indice + 1}. "${termo}"\n`;
             });
-            prompt += "\n";
+            instrucao += "\n";
         }
+        if (livrosFavoritos.length === 0 && historicoBusca.length === 0) {
+            instrucao += "O usuário não forneceu favoritos ou histórico de busca. Sugira 3 livros populares e aclamados pela crítica de gêneros variados (Ex: um romance, uma ficção científica, um não-ficção).\n";
+        }
+        instrucao += `Baseado nas informações (ou na falta delas, sugira obras gerais), sugira 3 livros. Formate a resposta como uma lista JSON de objetos. Cada objeto deve ter as chaves: "titulo", "autor", "ano" (apenas o ano), "urlImagem" (use uma URL de placeholder como 'img/placeholder.png' se não tiver uma real), e "categoria" (gênero principal). Não inclua nenhum texto explicativo, apenas o array JSON. Exemplo de um item: {"titulo": "O Nome do Vento", "autor": "Patrick Rothfuss", "ano": "2007", "urlImagem": "img/placeholder.png", "categoria": "Fantasia"}.`;
         
-        prompt += `Baseado nas informações acima, sugira 5 livros que o usuário possa gostar.
-        Formate a resposta como uma lista de livros com o seguinte formato para cada livro:
-        TÍTULO|AUTOR|ANO|URL_IMAGEM|CATEGORIA
-        
-        Onde URL_IMAGEM deve ser um link para uma capa de livro válida (pode ser uma URL genérica de placeholder).
-        Escolha livros populares e bem conhecidos, de gêneros variados mas alinhados com os interesses do usuário.
-        Não inclua nenhum texto explicativo, apenas os 5 livros no formato solicitado, um por linha.`;
-        
-        // Preparar a requisição
-        const requestData = {
-            contents: [{
-                parts: [{
-                    text: prompt
-                }]
-            }],
+        const dadosRequisicao = {
+            contents: [{ parts: [{ text: instrucao }] }],
             generationConfig: {
-                temperature: 0.7,
-                maxOutputTokens: 800,
-                topP: 0.9,
-                topK: 40
+                temperature: 0.8, 
+                maxOutputTokens: 1000, 
+                topP: 0.9, 
+                topK: 40,
+                // Garantir que a resposta seja JSON
+                response_mime_type: "application/json", // Para modelos que suportam saída JSON diretamente
             }
         };
         
-        // Fazer a requisição à API
-        const response = await fetch(`${GEMINI_CONFIG.apiUrl}?key=${GEMINI_CONFIG.apiKey}`, {
+        const resposta = await fetch(`${CONFIGURACAO_GEMINI.urlApi}?key=${CONFIGURACAO_GEMINI.chaveApi}`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(requestData)
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(dadosRequisicao),
+            signal: AbortSignal.timeout(CONFIGURACAO_GEMINI.tempoLimite)
         });
-        
-        if (!response.ok) {
-            throw new Error(`Erro na API do Gemini: ${response.status}`);
+
+        if (!resposta.ok) {
+            const erroTexto = await resposta.text();
+            throw new Error(`Erro na API do Gemini ao gerar recomendações: ${resposta.status} - ${erroTexto}`);
         }
         
-        const data = await response.json();
-        
-        // Extrair o texto da resposta
-        if (data.candidates && data.candidates.length > 0 && 
-            data.candidates[0].content && 
-            data.candidates[0].content.parts && 
-            data.candidates[0].content.parts.length > 0) {
-            
-            const responseText = data.candidates[0].content.parts[0].text.trim();
-            return parseRecommendationResponse(responseText);
-        } else {
-            throw new Error("Formato de resposta inesperado da API Gemini");
-        }
-    } catch (error) {
-        console.error("Erro ao gerar recomendações com Gemini:", error);
-        return generateDefaultRecommendations();
+        const textoResposta = await resposta.text();
+        return analisarRespostaRecomendacao(textoResposta);
+
+    } catch (erro) {
+        console.error("Erro ao gerar recomendações com Gemini:", erro);
+        return gerarRecomendacoesPadrao();
     }
 }
 
 /**
- * Analisa a resposta de texto do Gemini e converte em objetos de recomendação
- * @param {string} responseText - Texto de resposta do Gemini
- * @returns {Array} - Array de objetos de recomendação
+ * Analisa a resposta de recomendação da API
+ * @param {string} textoResposta - Texto da resposta da API
+ * @returns {Array} - Array de livros recomendados
  */
-function parseRecommendationResponse(responseText) {
-    const recommendations = [];
-    
-    // Dividir por linhas e processar cada uma
-    const lines = responseText.split('\n').filter(line => line.trim() !== '');
-    
-    for (const line of lines) {
-        // Ignorar linhas que não parecem ter o formato correto
-        if (!line.includes('|')) continue;
-        
-        const parts = line.split('|').map(part => part.trim());
-        if (parts.length >= 5) {
-            recommendations.push({
-                title: parts[0],
-                author: parts[1],
-                year: parts[2],
-                thumbnail: parts[3] || 'https://via.placeholder.com/150x200?text=Sem+Capa',
-                category: parts[4],
-                description: `Um livro de ${parts[1]} sobre ${parts[4].toLowerCase()}.`
-            });
+function analisarRespostaRecomendacao(textoResposta) {
+    try {
+        // Gemini pode retornar o JSON diretamente ou dentro de um bloco de código markdown
+        const jsonMatch = textoResposta.match(/```json\n([\s\S]*?)\n```/);
+        let jsonString = textoResposta;
+        if (jsonMatch && jsonMatch[1]) {
+            jsonString = jsonMatch[1];
         }
+        
+        const recomendacoes = JSON.parse(jsonString);
+        if (Array.isArray(recomendacoes)) {
+            // Validar estrutura básica
+            return recomendacoes.filter(rec => rec.titulo && rec.autor).map(rec => ({
+                title: rec.titulo,
+                authors: [rec.autor].flat(), // Garante que seja um array
+                publishedDate: rec.ano || 'N/A',
+                imageLinks: { thumbnail: rec.urlImagem || 'img/placeholder.png' },
+                categories: rec.categoria ? [rec.categoria] : ['Recomendação Geral'],
+                isRecommendation: true // Flag para identificar no UI
+            }));
+        }
+        console.warn("Resposta de recomendação não é um array JSON válido:", textoResposta);
+        return gerarRecomendacoesPadrao();
+    } catch (erro) {
+        console.error("Erro ao analisar resposta de recomendação do Gemini:", erro, "Resposta recebida:", textoResposta);
+        return gerarRecomendacoesPadrao(); // Fallback em caso de erro de parse
     }
-    
-    return recommendations.slice(0, 5); // Garantir que retornamos no máximo 5 recomendações
 }
 
 /**
- * Gera recomendações padrão quando o Gemini não está disponível
- * @returns {Array} - Array de objetos de recomendação padrão
+ * Gera recomendações padrão caso a API falhe
+ * @returns {Array} - Lista de recomendações padrão
  */
-function generateDefaultRecommendations() {
+function gerarRecomendacoesPadrao() {
+    console.log("Gerando recomendações padrão.");
     return [
         {
-            title: "Cem Anos de Solidão",
-            author: "Gabriel García Márquez",
-            year: "1967",
-            thumbnail: "https://m.media-amazon.com/images/I/71IYwmQGj5L._SY466_.jpg",
-            category: "Realismo Mágico",
-            description: "Uma saga que narra a história da família Buendía ao longo de sete gerações na fictícia cidade de Macondo."
-        },
-        {
-            title: "1984",
-            author: "George Orwell",
-            year: "1949",
-            thumbnail: "https://m.media-amazon.com/images/I/819js3EQwbL._SY466_.jpg",
-            category: "Ficção Distópica",
-            description: "Uma visão aterrorizante de um futuro totalitário onde o governo exerce controle absoluto sobre todos os aspectos da vida."
-        },
-        {
-            title: "O Pequeno Príncipe",
-            author: "Antoine de Saint-Exupéry",
-            year: "1943",
-            thumbnail: "https://m.media-amazon.com/images/I/41afCn3PQUL._SY445_SX342_.jpg",
-            category: "Literatura Infantil",
-            description: "Uma fábula poética que aborda temas profundos sobre a vida, relacionamentos e a sociedade."
-        },
-        {
-            title: "Crime e Castigo",
-            author: "Fiódor Dostoiévski",
-            year: "1866",
-            thumbnail: "https://m.media-amazon.com/images/I/81quIJIdkdL._SY466_.jpg",
-            category: "Romance Psicológico",
-            description: "A história de um ex-estudante que comete um assassinato e sofre com as consequências psicológicas."
-        },
-        {
             title: "Dom Casmurro",
-            author: "Machado de Assis",
-            year: "1899",
-            thumbnail: "https://m.media-amazon.com/images/I/61x1ZT55BhL._SY466_.jpg",
-            category: "Literatura Brasileira",
-            description: "Um dos grandes romances da literatura brasileira que explora o ciúme e a dúvida através da história de Bentinho e Capitu."
+            authors: ["Machado de Assis"],
+            publishedDate: "1899",
+            imageLinks: { thumbnail: "img/domcasmurro_placeholder.jpg" }, // Exemplo de placeholder
+            categories: ["Romance", "Literatura Brasileira"],
+            description: "Um clássico da literatura brasileira que explora temas de ciúme e dúvida.",
+            isRecommendation: true
+        },
+        {
+            title: "O Guia do Mochileiro das Galáxias",
+            authors: ["Douglas Adams"],
+            publishedDate: "1979",
+            imageLinks: { thumbnail: "img/guia_placeholder.jpg" },
+            categories: ["Ficção Científica", "Humor"],
+            description: "Uma aventura cômica e absurda pelo espaço.",
+            isRecommendation: true
+        },
+        {
+            title: "Sapiens: Uma Breve História da Humanidade",
+            authors: ["Yuval Noah Harari"],
+            publishedDate: "2011",
+            imageLinks: { thumbnail: "img/sapiens_placeholder.jpg" },
+            categories: ["Não-ficção", "História"],
+            description: "Uma exploração fascinante da história da nossa espécie.",
+            isRecommendation: true
         }
     ];
 }
 
 /**
- * Gera uma descrição alternativa para quando a API do Gemini não está disponível
- * @param {Object} book - Objeto com informações do livro
- * @returns {string} - Descrição gerada localmente
+ * Gera uma descrição alternativa quando a API falha ou não está configurada
+ * @param {Object} dadosLivro - Objeto com informações do livro
+ * @returns {string} - Descrição alternativa
  */
-function generateFallbackDescription(book) {
-    // Se já temos uma boa descrição, retornar ela mesma
-    if (book.description && 
-        book.description !== 'Sem descrição disponível' && 
-        book.description !== 'Descrição não disponível na API do Open Library') {
-        return book.description;
+function gerarDescricaoAlternativa(dadosLivro) {
+    if (dadosLivro && dadosLivro.description && dadosLivro.description.length > 20) {
+        return dadosLivro.description.substring(0, 200) + (dadosLivro.description.length > 200 ? "..." : "");
     }
-    
-    // Construir uma descrição simples com base nos metadados disponíveis
-    let description = `"${book.title}" `;
-    
-    if (book.authors && book.authors.length > 0) {
-        if (book.authors.length === 1) {
-            description += `foi escrito por ${book.authors[0]}`;
-        } else {
-            const lastAuthor = book.authors.pop();
-            description += `foi escrito por ${book.authors.join(', ')} e ${lastAuthor}`;
-        }
+    let altDesc = `Informações sobre "${dadosLivro.title || 'este livro'}"`;
+    if (dadosLivro.authors && dadosLivro.authors.length > 0) {
+        altDesc += ` por ${dadosLivro.authors.join(', ')}`;
     }
-    
-    if (book.publishedDate) {
-        description += ` e publicado em ${book.publishedDate}`;
-    }
-    
-    description += '.';
-    
-    // Adicionar informações sobre categorias, se disponíveis
-    if (book.categories && book.categories.length > 0) {
-        description += ` Este livro se enquadra ${book.categories.length > 1 ? 'nas categorias' : 'na categoria'} de ${book.categories.slice(0, 3).join(', ')}`;
-        if (book.categories.length > 3) {
-            description += ', entre outras';
-        }
-        description += '.';
-    }
-    
-    return description;
+    altDesc += ". Mais detalhes podem estar disponíveis na página do livro.";
+    return altDesc;
 }
 
 /**
  * Analisa um livro e retorna insights sobre ele
- * @param {Object} book - Objeto com informações do livro
- * @returns {Promise<Object>} - Objeto com análises e insights
+ * @param {Object} dadosLivro - Objeto com informações do livro
+ * @returns {Promise<Object>} - Objeto com análise do livro
  */
-async function analyzeBook(book) {
-    // Esta função poderia usar a API do Gemini para análises mais profundas
-    // Por enquanto, retorna apenas algumas informações básicas
-    return {
-        recommendedFor: getRecommendedAudience(book),
-        complexity: estimateComplexity(book),
-        similarBooks: [] // Poderia ser preenchido com uma chamada real à API
-    };
+async function analisarLivroComGemini(dadosLivro) {
+    if (CONFIGURACAO_GEMINI.chaveApi === "AIzaSyCDqalwwc3yJkwvb7kHZnjCL2J_fM3AXKg") {
+        return {
+            audience: obterPublicoRecomendado(dadosLivro),
+            complexity: estimarComplexidade(dadosLivro),
+            summary: "Análise detalhada indisponível sem chave de API configurada.",
+            error: "Chave de API não configurada"
+        };
+    }
+
+    try {
+        const instrucao = `RESPONDA SEMPRE EM PORTUGUÊS DO BRASIL. Analise o livro "${dadosLivro.title}"${dadosLivro.authors ? ` por ${dadosLivro.authors.join(', ')}` : ''}. Forneça:\n1.  Um resumo conciso (2-3 frases).\n2.  O público-alvo principal (ex: Jovens Adultos, Acadêmicos, Leitores Casuais, etc.).\n3.  Uma estimativa do nível de complexidade da leitura (ex: Fácil, Moderado, Desafiador).\n\nFormate a resposta como um objeto JSON com as chaves "resumo", "publicoAlvo", "complexidadeLeitura".\nExemplo: {"resumo": "...", "publicoAlvo": "Jovens Adultos", "complexidadeLeitura": "Moderado"}`; 
+        
+        const dadosRequisicao = {
+            contents: [{ parts: [{ text: instrucao }] }],
+            generationConfig: { 
+                temperature: 0.6, 
+                maxOutputTokens: 500,
+                response_mime_type: "application/json",
+            }
+        };
+
+        const resposta = await fetch(`${CONFIGURACAO_GEMINI.urlApi}?key=${CONFIGURACAO_GEMINI.chaveApi}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(dadosRequisicao),
+            signal: AbortSignal.timeout(CONFIGURACAO_GEMINI.tempoLimite)
+        });
+
+        if (!resposta.ok) {
+            const erroTexto = await resposta.text();
+            throw new Error(`Erro na API Gemini ao analisar livro: ${resposta.status} - ${erroTexto}`);
+        }
+
+        const textoResposta = await resposta.text();
+        // Gemini pode retornar o JSON diretamente ou dentro de um bloco de código markdown
+        const jsonMatch = textoResposta.match(/```json\n([\s\S]*?)\n```/);
+        let jsonString = textoResposta;
+        if (jsonMatch && jsonMatch[1]) {
+            jsonString = jsonMatch[1];
+        }
+
+        const analise = JSON.parse(jsonString);
+        return {
+            summary: analise.resumo || "Resumo não pôde ser gerado.",
+            audience: analise.publicoAlvo || obterPublicoRecomendado(dadosLivro),
+            complexity: analise.complexidadeLeitura || estimarComplexidade(dadosLivro)
+        };
+
+    } catch (erro) {
+        console.error("Erro ao analisar livro com Gemini:", erro);
+        return {
+            audience: obterPublicoRecomendado(dadosLivro),
+            complexity: estimarComplexidade(dadosLivro),
+            summary: "Erro ao gerar análise detalhada com IA.",
+            error: erro.message
+        };
+    }
 }
 
 /**
- * Estima para qual público o livro é mais recomendado
- * @param {Object} book - Objeto com informações do livro
- * @returns {string} - Público recomendado
+ * Funções de fallback para análise quando a API não está disponível
  */
-function getRecommendedAudience(book) {
-    // Lógica simplificada baseada em categorias
-    const categories = book.categories || [];
-    const lowerCategories = categories.map(cat => cat.toLowerCase());
-    
-    if (lowerCategories.some(cat => cat.includes('infantil') || cat.includes('criança'))) {
-        return 'Crianças';
-    } else if (lowerCategories.some(cat => cat.includes('juvenil') || cat.includes('young adult'))) {
-        return 'Adolescentes';
-    } else if (lowerCategories.some(cat => 
-        cat.includes('acadêmico') || 
-        cat.includes('técnico') || 
-        cat.includes('científico'))) {
-        return 'Acadêmicos e Pesquisadores';
+function obterPublicoRecomendado(dadosLivro) {
+    if (dadosLivro.categories) {
+        const categorias = dadosLivro.categories.join(' ').toLowerCase();
+        if (categorias.includes('juvenil') || categorias.includes('young adult')) return "Jovens Adultos";
+        if (categorias.includes('infantil') || categorias.includes('children')) return "Infantil";
+        if (categorias.includes('ficção científica') || categorias.includes('fantasia')) return "Fãs de Ficção/Fantasia";
+        if (categorias.includes('negócios') || categorias.includes('economia')) return "Profissionais e Estudantes de Negócios";
+        if (categorias.includes('história') || categorias.includes('biografia')) return "Interessados em História/Biografias";
     }
-    
-    return 'Leitores adultos em geral';
+    return "Leitores em Geral";
 }
 
-/**
- * Estima a complexidade do livro com base em suas metainformações
- * @param {Object} book - Objeto com informações do livro
- * @returns {string} - Nível de complexidade estimado
- */
-function estimateComplexity(book) {
-    // Lógica simplificada baseada em categorias e tamanho
-    const categories = book.categories || [];
-    const lowerCategories = categories.map(cat => cat.toLowerCase());
-    
-    if (lowerCategories.some(cat => 
-        cat.includes('filosofia') || 
-        cat.includes('científico') || 
-        cat.includes('técnico'))) {
-        return 'Avançado';
-    } else if (lowerCategories.some(cat => 
-        cat.includes('infantil') || 
-        cat.includes('criança'))) {
-        return 'Simples';
+function estimarComplexidade(dadosLivro) {
+    if (dadosLivro.pageCount > 400) return "Leitura Extensa/Desafiadora";
+    if (dadosLivro.categories && dadosLivro.categories.join(' ').toLowerCase().includes('acadêmico')) return "Acadêmico/Complexo";
+    if (dadosLivro.pageCount < 150) return "Leitura Rápida/Fácil";
+    return "Moderada";
+}
+
+// Funções expostas pela Interface da API (wrappers para as funções internas com tratamento de erro)
+
+async function gerarDescricaoLivroParaInterface(livro) {
+    try {
+        return await gerarDescricaoLivroComGemini(livro);
+    } catch (erro) {
+        console.error("[ApiGemini.obterDescricaoLivro] Erro:", erro);
+        return gerarDescricaoAlternativa(livro); // Fallback final
     }
-    
-    // Considerar o número de páginas, se disponível
-    if (book.pageCount) {
-        if (book.pageCount > 500) return 'Avançado';
-        if (book.pageCount < 200) return 'Acessível';
+}
+
+async function gerarDescricaoBuscaParaInterface(termoBusca) {
+    try {
+        return await gerarDescricaoBuscaComGemini(termoBusca);
+    } catch (erro) {
+        console.error("[ApiGemini.obterDescricaoBusca] Erro:", erro);
+        return `Resultados para "${termoBusca}"`; // Fallback final
     }
-    
-    return 'Intermediário';
+}
+
+async function gerarRecomendacoesParaInterface(livrosFavoritos = [], historicoBusca = []) {
+    try {
+        return await gerarRecomendacoesComGemini(livrosFavoritos, historicoBusca);
+    } catch (erro) {
+        console.error("[ApiGemini.obterRecomendacoes] Erro:", erro);
+        return gerarRecomendacoesPadrao(); // Fallback final
+    }
+}
+
+async function analisarLivroParaInterface(livro) {
+    try {
+        return await analisarLivroComGemini(livro);
+    } catch (erro) {
+        console.error("[ApiGemini.analisarLivro] Erro:", erro);
+        return { 
+            summary: "Análise indisponível no momento.", 
+            audience: obterPublicoRecomendado(livro), 
+            complexity: estimarComplexidade(livro),
+            error: "Erro ao processar análise."
+        };
+    }
+}
+
+// Garantir que StorageManager seja acessível se definido em outro script.
+// Esta verificação é apenas um exemplo, StorageManager deve ser carregado antes.
+if (typeof StorageManager === 'undefined') {
+    console.warn('StorageManager não definido. Funcionalidades de histórico e API Key podem não funcionar como esperado.');
 } 
